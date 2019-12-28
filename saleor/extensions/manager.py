@@ -150,10 +150,6 @@ class ExtensionsManager(PaymentInterface):
         default_value = False
         return self.__run_method_on_plugins("show_taxes_on_storefront", default_value)
 
-    def taxes_are_enabled(self) -> bool:
-        default_value = False
-        return self.__run_method_on_plugins("taxes_are_enabled", default_value)
-
     def apply_taxes_to_product(
         self, product: "Product", price: Money, country: Country
     ):
@@ -256,12 +252,6 @@ class ExtensionsManager(PaymentInterface):
         method_name = "process_payment"
         return self.__run_payment_method(gateway, method_name, payment_information)
 
-    def create_payment_form(self, data, gateway, payment_information):
-        method_name = "create_form"
-        return self.__run_payment_method(
-            gateway, method_name, payment_information, data=data
-        )
-
     def get_client_token(self, gateway, token_config: "TokenConfig") -> str:
         method_name = "get_client_token"
         default_value = None
@@ -307,12 +297,6 @@ class ExtensionsManager(PaymentInterface):
             {"name": plugin_name, "config": self.__get_payment_config(plugin_name)}
             for plugin_name in payment_plugins
         ]
-
-    def get_payment_template(self, gateway: str) -> str:
-        method_name = "get_payment_template"
-        default_value = None
-        gtw = self.get_plugin(gateway)
-        return self.__run_method_on_single_plugin(gtw, method_name, default_value)
 
     def __get_payment_config(self, gateway: str) -> List[dict]:
         method_name = "get_payment_config"

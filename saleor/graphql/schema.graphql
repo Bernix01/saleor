@@ -318,8 +318,8 @@ enum AttributeSortField {
 }
 
 input AttributeSortingInput {
-  field: AttributeSortField!
   direction: OrderDirection!
+  field: AttributeSortField!
 }
 
 type AttributeTranslatableContent implements Node {
@@ -568,6 +568,17 @@ input CategoryInput {
   seo: SeoInput
   backgroundImage: Upload
   backgroundImageAlt: String
+}
+
+enum CategorySortField {
+  NAME
+  PRODUCT_COUNT
+  SUBCATEGORY_COUNT
+}
+
+input CategorySortingInput {
+  direction: OrderDirection!
+  field: CategorySortField!
 }
 
 type CategoryTranslatableContent implements Node {
@@ -950,6 +961,17 @@ type CollectionReorderProducts {
   productErrors: [ProductError!]
 }
 
+enum CollectionSortField {
+  NAME
+  AVAILABILITY
+  PRODUCT_COUNT
+}
+
+input CollectionSortingInput {
+  direction: OrderDirection!
+  field: CollectionSortField!
+}
+
 type CollectionTranslatableContent implements Node {
   seoTitle: String
   seoDescription: String
@@ -1287,12 +1309,6 @@ type CreditCard {
   expYear: Int!
 }
 
-type CustomerAddressCreate {
-  errors: [Error!]
-  user: User
-  address: Address
-}
-
 type CustomerBulkDelete {
   errors: [Error!]
   count: Int!
@@ -1351,29 +1367,6 @@ input CustomerInput {
   email: String
   isActive: Boolean
   note: String
-}
-
-type CustomerPasswordReset {
-  errors: [Error!]
-}
-
-input CustomerPasswordResetInput {
-  email: String!
-}
-
-type CustomerRegister {
-  errors: [Error!]
-  user: User
-}
-
-input CustomerRegisterInput {
-  email: String!
-  password: String!
-}
-
-type CustomerSetDefaultAddress {
-  errors: [Error!]
-  user: User
 }
 
 type CustomerUpdate {
@@ -1836,11 +1829,6 @@ type LanguageDisplay {
   language: String!
 }
 
-type LoggedUserUpdate {
-  errors: [Error!]
-  user: User
-}
-
 type Margin {
   start: Int
   stop: Int
@@ -1990,6 +1978,11 @@ input MenuItemMoveInput {
   sortOrder: Int
 }
 
+input MenuItemSortingInput {
+  direction: OrderDirection!
+  field: MenuItemsSortField!
+}
+
 type MenuItemTranslatableContent implements Node {
   id: ID!
   name: String!
@@ -2012,6 +2005,20 @@ type MenuItemUpdate {
   errors: [Error!]
   menuErrors: [MenuError!]
   menuItem: MenuItem
+}
+
+enum MenuItemsSortField {
+  NAME
+}
+
+enum MenuSortField {
+  NAME
+  ITEMS_COUNT
+}
+
+input MenuSortingInput {
+  direction: OrderDirection!
+  field: MenuSortField!
 }
 
 type MenuUpdate {
@@ -2065,11 +2072,18 @@ input MoveProductInput {
 }
 
 type Mutation {
+  wishlistAddProduct(productId: ID!): WishlistAddProductMutation
+  wishlistRemoveProduct(productId: ID!): WishlistRemoveProductMutation
+  wishlistAddVariant(variantId: ID!): WishlistAddProductVariantMutation
+  wishlistRemoveVariant(variantId: ID!): WishlistRemoveProductVariantMutation
   webhookCreate(input: WebhookCreateInput!): WebhookCreate
   webhookDelete(id: ID!): WebhookDelete
   webhookUpdate(id: ID!, input: WebhookUpdateInput!): WebhookUpdate
   authorizationKeyAdd(input: AuthorizationKeyInput!, keyType: AuthorizationKeyType!): AuthorizationKeyAdd
   authorizationKeyDelete(keyType: AuthorizationKeyType!): AuthorizationKeyDelete
+  staffNotificationRecipientCreate(input: StaffNotificationRecipientInput!): StaffNotificationRecipientCreate
+  staffNotificationRecipientUpdate(id: ID!, input: StaffNotificationRecipientInput!): StaffNotificationRecipientUpdate
+  staffNotificationRecipientDelete(id: ID!): StaffNotificationRecipientDelete
   homepageCollectionUpdate(collection: ID): HomepageCollectionUpdate
   shopDomainUpdate(input: SiteDomainInput): ShopDomainUpdate
   shopSettingsUpdate(input: ShopSettingsInput!): ShopSettingsUpdate
@@ -2238,7 +2252,7 @@ type Mutation {
   tokenVerify(token: String!): VerifyToken
   checkoutAddPromoCode(checkoutId: ID!, promoCode: String!): CheckoutAddPromoCode
   checkoutBillingAddressUpdate(billingAddress: AddressInput!, checkoutId: ID!): CheckoutBillingAddressUpdate
-  checkoutComplete(checkoutId: ID!, storeSource: Boolean = false): CheckoutComplete
+  checkoutComplete(checkoutId: ID!, redirectUrl: String, storeSource: Boolean = false): CheckoutComplete
   checkoutCreate(input: CheckoutCreateInput!): CheckoutCreate
   checkoutCustomerAttach(checkoutId: ID!, customerId: ID!): CheckoutCustomerAttach
   checkoutCustomerDetach(checkoutId: ID!): CheckoutCustomerDetach
@@ -2267,11 +2281,6 @@ type Mutation {
   accountRequestDeletion(redirectUrl: String!): AccountRequestDeletion
   accountDelete(token: String!): AccountDelete
   accountUpdateMeta(input: MetaInput!): AccountUpdateMeta
-  customerPasswordReset(input: CustomerPasswordResetInput!): CustomerPasswordReset
-  customerAddressCreate(input: AddressInput!, type: AddressTypeEnum): CustomerAddressCreate
-  customerSetDefaultAddress(id: ID!, type: AddressTypeEnum!): CustomerSetDefaultAddress
-  customerRegister(input: CustomerRegisterInput!): CustomerRegister
-  loggedUserUpdate(input: UserAddressInput!): LoggedUserUpdate
   addressCreate(input: AddressInput!, userId: ID!): AddressCreate
   addressUpdate(id: ID!, input: AddressInput!): AddressUpdate
   addressDelete(id: ID!): AddressDelete
@@ -2298,7 +2307,6 @@ type Mutation {
   serviceAccountClearPrivateMetadata(id: ID!, input: MetaPath!): ServiceAccountClearPrivateMeta
   serviceAccountTokenCreate(input: ServiceAccountTokenInput!): ServiceAccountTokenCreate
   serviceAccountTokenDelete(id: ID!): ServiceAccountTokenDelete
-  passwordReset(email: String!): PasswordReset
 }
 
 input NameTranslationInput {
@@ -2575,6 +2583,20 @@ type OrderRefund {
   orderErrors: [OrderError!]
 }
 
+enum OrderSortField {
+  NUMBER
+  CREATION_DATE
+  CUSTOMER
+  PAYMENT
+  FULFILLMENT_STATUS
+  TOTAL
+}
+
+input OrderSortingInput {
+  direction: OrderDirection!
+  field: OrderSortField!
+}
+
 enum OrderStatus {
   DRAFT
   UNFULFILLED
@@ -2696,6 +2718,19 @@ input PageInput {
   seo: SeoInput
 }
 
+enum PageSortField {
+  TITLE
+  SLUG
+  VISIBILITY
+  CREATION_DATE
+  PUBLICATION_DATE
+}
+
+input PageSortingInput {
+  direction: OrderDirection!
+  field: PageSortField!
+}
+
 type PageTranslatableContent implements Node {
   seoTitle: String
   seoDescription: String
@@ -2739,10 +2774,6 @@ type PasswordChange {
   errors: [Error!]
   user: User
   accountErrors: [AccountError!]
-}
-
-type PasswordReset {
-  errors: [Error!]
 }
 
 type Payment implements Node {
@@ -2854,10 +2885,9 @@ enum PermissionEnum {
   MANAGE_USERS
   MANAGE_STAFF
   MANAGE_SERVICE_ACCOUNTS
-  IMPERSONATE_USERS
   MANAGE_DISCOUNTS
-  MANAGE_GIFT_CARD
   MANAGE_PLUGINS
+  MANAGE_GIFT_CARD
   MANAGE_MENUS
   MANAGE_ORDERS
   MANAGE_PAGES
@@ -2890,6 +2920,16 @@ type PluginCountableEdge {
 input PluginFilterInput {
   active: Boolean
   search: String
+}
+
+enum PluginSortField {
+  NAME
+  IS_ACTIVE
+}
+
+input PluginSortingInput {
+  direction: OrderDirection!
+  field: PluginSortField!
 }
 
 type PluginUpdate {
@@ -3115,9 +3155,9 @@ input ProductInput {
 }
 
 input ProductOrder {
-  field: ProductOrderField
-  attributeId: ID
   direction: OrderDirection!
+  attributeId: ID
+  field: ProductOrderField
 }
 
 enum ProductOrderField {
@@ -3254,6 +3294,17 @@ type ProductTypeReorderAttributes {
   errors: [Error!]
   productType: ProductType
   productErrors: [ProductError!]
+}
+
+enum ProductTypeSortField {
+  NAME
+  DIGITAL
+  SHIPPING_REQUIRED
+}
+
+input ProductTypeSortingInput {
+  direction: OrderDirection!
+  field: ProductTypeSortField!
 }
 
 type ProductTypeUpdate {
@@ -3436,7 +3487,7 @@ type ProductVariantUpdatePrivateMeta {
 
 type Query {
   webhook(id: ID!): Webhook
-  webhooks(filter: WebhookFilterInput, before: String, after: String, first: Int, last: Int): WebhookCountableConnection
+  webhooks(sortBy: WebhookSortingInput, filter: WebhookFilterInput, before: String, after: String, first: Int, last: Int): WebhookCountableConnection
   webhookEvents: [WebhookEvent]
   webhookSamplePayload(eventType: WebhookEventTypeEnum!): JSONString
   translations(kind: TranslatableKinds!, before: String, after: String, first: Int, last: Int): TranslatableItemConnection
@@ -3448,14 +3499,14 @@ type Query {
   digitalContents(before: String, after: String, first: Int, last: Int): DigitalContentCountableConnection
   attributes(query: String, inCategory: ID, inCollection: ID, filter: AttributeFilterInput, sortBy: AttributeSortingInput, before: String, after: String, first: Int, last: Int): AttributeCountableConnection
   attribute(id: ID!): Attribute
-  categories(query: String, filter: CategoryFilterInput, level: Int, before: String, after: String, first: Int, last: Int): CategoryCountableConnection
+  categories(query: String, filter: CategoryFilterInput, sortBy: CategorySortingInput, level: Int, before: String, after: String, first: Int, last: Int): CategoryCountableConnection
   category(id: ID!): Category
   collection(id: ID!): Collection
-  collections(filter: CollectionFilterInput, query: String, before: String, after: String, first: Int, last: Int): CollectionCountableConnection
+  collections(filter: CollectionFilterInput, sortBy: CollectionSortingInput, query: String, before: String, after: String, first: Int, last: Int): CollectionCountableConnection
   product(id: ID!): Product
   products(filter: ProductFilterInput, attributes: [AttributeScalar], categories: [ID], collections: [ID], sortBy: ProductOrder, stockAvailability: StockAvailability, query: String, before: String, after: String, first: Int, last: Int): ProductCountableConnection
   productType(id: ID!): ProductType
-  productTypes(filter: ProductTypeFilterInput, query: String, before: String, after: String, first: Int, last: Int): ProductTypeCountableConnection
+  productTypes(filter: ProductTypeFilterInput, query: String, sortBy: ProductTypeSortingInput, before: String, after: String, first: Int, last: Int): ProductTypeCountableConnection
   productVariant(id: ID!): ProductVariant
   productVariants(ids: [ID], before: String, after: String, first: Int, last: Int): ProductVariantCountableConnection
   reportProductSales(period: ReportingPeriod!, before: String, after: String, first: Int, last: Int): ProductVariantCountableConnection
@@ -3463,35 +3514,35 @@ type Query {
   payments(before: String, after: String, first: Int, last: Int): PaymentCountableConnection
   paymentClientToken(gateway: String!): String @deprecated(reason: "DEPRECATED: Will be removed in Saleor 2.10, use payment gateway config instead in availablePaymentGateways.")
   page(id: ID, slug: String): Page
-  pages(query: String, filter: PageFilterInput, before: String, after: String, first: Int, last: Int): PageCountableConnection
+  pages(query: String, sortBy: PageSortingInput, filter: PageFilterInput, before: String, after: String, first: Int, last: Int): PageCountableConnection
   homepageEvents(before: String, after: String, first: Int, last: Int): OrderEventCountableConnection
   order(id: ID!): Order
-  orders(filter: OrderFilterInput, query: String, created: ReportingPeriod, status: OrderStatusFilter, before: String, after: String, first: Int, last: Int): OrderCountableConnection
-  draftOrders(filter: OrderDraftFilterInput, query: String, created: ReportingPeriod, before: String, after: String, first: Int, last: Int): OrderCountableConnection
+  orders(sortBy: OrderSortingInput, filter: OrderFilterInput, query: String, created: ReportingPeriod, status: OrderStatusFilter, before: String, after: String, first: Int, last: Int): OrderCountableConnection
+  draftOrders(sortBy: OrderSortingInput, filter: OrderDraftFilterInput, query: String, created: ReportingPeriod, before: String, after: String, first: Int, last: Int): OrderCountableConnection
   ordersTotal(period: ReportingPeriod): TaxedMoney
   orderByToken(token: UUID!): Order
   menu(id: ID, name: String): Menu
-  menus(query: String, filter: MenuFilterInput, before: String, after: String, first: Int, last: Int): MenuCountableConnection
+  menus(query: String, sortBy: MenuSortingInput, filter: MenuFilterInput, before: String, after: String, first: Int, last: Int): MenuCountableConnection
   menuItem(id: ID!): MenuItem
-  menuItems(query: String, filter: MenuItemFilterInput, before: String, after: String, first: Int, last: Int): MenuItemCountableConnection
+  menuItems(query: String, sortBy: MenuItemSortingInput, filter: MenuItemFilterInput, before: String, after: String, first: Int, last: Int): MenuItemCountableConnection
   giftCard(id: ID!): GiftCard
   giftCards(before: String, after: String, first: Int, last: Int): GiftCardCountableConnection
   plugin(id: ID!): Plugin
-  plugins(filter: PluginFilterInput, before: String, after: String, first: Int, last: Int): PluginCountableConnection
+  plugins(filter: PluginFilterInput, sortBy: PluginSortingInput, before: String, after: String, first: Int, last: Int): PluginCountableConnection
   sale(id: ID!): Sale
-  sales(filter: SaleFilterInput, query: String, before: String, after: String, first: Int, last: Int): SaleCountableConnection
+  sales(filter: SaleFilterInput, sortBy: SaleSortingInput, query: String, before: String, after: String, first: Int, last: Int): SaleCountableConnection
   voucher(id: ID!): Voucher
-  vouchers(filter: VoucherFilterInput, query: String, before: String, after: String, first: Int, last: Int): VoucherCountableConnection
+  vouchers(filter: VoucherFilterInput, sortBy: VoucherSortingInput, query: String, before: String, after: String, first: Int, last: Int): VoucherCountableConnection
   taxTypes: [TaxType]
   checkout(token: UUID): Checkout
   checkouts(before: String, after: String, first: Int, last: Int): CheckoutCountableConnection
   checkoutLine(id: ID): CheckoutLine
   checkoutLines(before: String, after: String, first: Int, last: Int): CheckoutLineCountableConnection
   addressValidationRules(countryCode: CountryCode!, countryArea: String, city: String, cityArea: String): AddressValidationData
-  customers(filter: CustomerFilterInput, query: String, before: String, after: String, first: Int, last: Int): UserCountableConnection
+  customers(filter: CustomerFilterInput, sortBy: UserSortingInput, query: String, before: String, after: String, first: Int, last: Int): UserCountableConnection
   me: User
-  staffUsers(filter: StaffUserInput, query: String, before: String, after: String, first: Int, last: Int): UserCountableConnection
-  serviceAccounts(filter: ServiceAccountFilterInput, before: String, after: String, first: Int, last: Int): ServiceAccountCountableConnection
+  staffUsers(filter: StaffUserInput, sortBy: UserSortingInput, query: String, before: String, after: String, first: Int, last: Int): UserCountableConnection
+  serviceAccounts(filter: ServiceAccountFilterInput, sortBy: ServiceAccountSortingInput, before: String, after: String, first: Int, last: Int): ServiceAccountCountableConnection
   serviceAccount(id: ID!): ServiceAccount
   user(id: ID!): User
   _entities(representations: [_Any]): [_Entity]
@@ -3590,6 +3641,19 @@ type SaleRemoveCatalogues {
   sale: Sale
 }
 
+enum SaleSortField {
+  NAME
+  START_DATE
+  END_DATE
+  VALUE
+  TYPE
+}
+
+input SaleSortingInput {
+  direction: OrderDirection!
+  field: SaleSortField!
+}
+
 type SaleTranslatableContent implements Node {
   id: ID!
   name: String!
@@ -3679,6 +3743,16 @@ input ServiceAccountInput {
   name: String
   isActive: Boolean
   permissions: [PermissionEnum]
+}
+
+enum ServiceAccountSortField {
+  NAME
+  CREATION_DATE
+}
+
+input ServiceAccountSortingInput {
+  direction: OrderDirection!
+  field: ServiceAccountSortField!
 }
 
 type ServiceAccountToken implements Node {
@@ -3892,6 +3966,7 @@ type Shop {
   defaultDigitalUrlValidDays: Int
   companyAddress: Address
   customerSetPasswordUrl: String
+  staffNotificationRecipients: [StaffNotificationRecipient]
 }
 
 type ShopAddressUpdate {
@@ -4013,6 +4088,37 @@ input StaffInput {
 enum StaffMemberStatus {
   ACTIVE
   DEACTIVATED
+}
+
+type StaffNotificationRecipient implements Node {
+  user: User
+  active: Boolean
+  id: ID!
+  email: String
+}
+
+type StaffNotificationRecipientCreate {
+  errors: [Error!]
+  shopErrors: [ShopError!]
+  staffNotificationRecipient: StaffNotificationRecipient
+}
+
+type StaffNotificationRecipientDelete {
+  errors: [Error!]
+  shopErrors: [ShopError!]
+  staffNotificationRecipient: StaffNotificationRecipient
+}
+
+input StaffNotificationRecipientInput {
+  user: ID
+  email: String
+  active: Boolean
+}
+
+type StaffNotificationRecipientUpdate {
+  errors: [Error!]
+  shopErrors: [ShopError!]
+  staffNotificationRecipient: StaffNotificationRecipient
 }
 
 type StaffUpdate {
@@ -4170,11 +4276,7 @@ type User implements Node {
   avatar(size: Int): Image
   events: [CustomerEvent]
   storedPaymentSources: [PaymentSource]
-}
-
-input UserAddressInput {
-  defaultBillingAddress: AddressInput
-  defaultShippingAddress: AddressInput
+  wishlist(before: String, after: String, first: Int, last: Int): WishlistItemCountableConnection
 }
 
 type UserAvatarDelete {
@@ -4228,6 +4330,18 @@ input UserCreateInput {
   note: String
   sendPasswordEmail: Boolean
   redirectUrl: String
+}
+
+enum UserSortField {
+  FIRST_NAME
+  LAST_NAME
+  EMAIL
+  ORDER_COUNT
+}
+
+input UserSortingInput {
+  direction: OrderDirection!
+  field: UserSortField!
 }
 
 type UserUpdateMeta {
@@ -4369,6 +4483,21 @@ type VoucherRemoveCatalogues {
   voucher: Voucher
 }
 
+enum VoucherSortField {
+  CODE
+  START_DATE
+  END_DATE
+  VALUE
+  TYPE
+  USAGE_LIMIT
+  MINIMUM_SPENT_AMOUNT
+}
+
+input VoucherSortingInput {
+  direction: OrderDirection!
+  field: VoucherSortField!
+}
+
 type VoucherTranslatableContent implements Node {
   id: ID!
   name: String
@@ -4475,6 +4604,17 @@ input WebhookFilterInput {
   isActive: Boolean
 }
 
+enum WebhookSortField {
+  NAME
+  SERVICE_ACCOUNT
+  TARGET_URL
+}
+
+input WebhookSortingInput {
+  direction: OrderDirection!
+  field: WebhookSortField!
+}
+
 type WebhookUpdate {
   errors: [Error!]
   webhook: Webhook
@@ -4502,6 +4642,68 @@ enum WeightUnitsEnum {
   LB
   OZ
   G
+}
+
+type Wishlist implements Node {
+  id: ID!
+  createdAt: DateTime!
+  items(before: String, after: String, first: Int, last: Int, id: ID): WishlistItemCountableConnection!
+}
+
+type WishlistAddProductMutation {
+  errors: [Error!]
+  wishlist: [WishlistItem]
+  wishlistErrors: [WishlistError!]
+}
+
+type WishlistAddProductVariantMutation {
+  errors: [Error!]
+  wishlist: [WishlistItem]
+  wishlistErrors: [WishlistError!]
+}
+
+type WishlistError {
+  field: String
+  message: String
+  code: WishlistErrorCode
+}
+
+enum WishlistErrorCode {
+  GRAPHQL_ERROR
+  INVALID
+  NOT_FOUND
+  REQUIRED
+  UNIQUE
+}
+
+type WishlistItem implements Node {
+  id: ID!
+  wishlist: Wishlist!
+  product: Product!
+  variants(before: String, after: String, first: Int, last: Int): ProductVariantCountableConnection!
+}
+
+type WishlistItemCountableConnection {
+  pageInfo: PageInfo!
+  edges: [WishlistItemCountableEdge!]!
+  totalCount: Int
+}
+
+type WishlistItemCountableEdge {
+  node: WishlistItem!
+  cursor: String!
+}
+
+type WishlistRemoveProductMutation {
+  errors: [Error!]
+  wishlist: [WishlistItem]
+  wishlistErrors: [WishlistError!]
+}
+
+type WishlistRemoveProductVariantMutation {
+  errors: [Error!]
+  wishlist: [WishlistItem]
+  wishlistErrors: [WishlistError!]
 }
 
 scalar _Any

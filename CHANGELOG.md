@@ -23,6 +23,18 @@ All notable, unreleased changes to this project will be documented in this file.
 - Fixed JSON encoding error on Google Analytics reporting - #5004 by @NyanKiyoshi
 - Create custom field to translation, use new translation types in translations query - #5007 by @fowczarek
 - Take allocated stock in account in `StockAvailability` filter - #5019 by @simonbru
+- Generate matching postal codes for US addresses - #5033 by @maarcingebala
+- Update debug toolbar - #5032 by @IKarbowiak
+- Allow staff member to receive notification about customers orders - #4993 by @kswiatek92
+- JWT payload now contains user global id - #5039 by @salwator
+- Made middleware path resolving lazy and refactored middleware names - #5041 by @NyanKiyoshi
+- Generate slug in attribute value save - #5055 by @fowczarek
+- Fix order status after order update - #5072 by @fowczarek
+- Extend top-level connection resolvers with ability to sort results - #5018 by @fowczarek
+- Drop storefront 1.0 - #5043 by @IKarbowiak
+- Replace permissions strings with enums - #5038 by @kswiatek92
+- Remove gateways forms and templates - #5075 by @IKarbowiak
+- Add `Wishlist` models and GraphQL endpoints - #5021 by @derenio
 
 ## 2.9.0
 
