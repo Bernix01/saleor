@@ -21,8 +21,12 @@ from django_countries import countries
 from PIL import Image
 from prices import Money, TaxedMoney
 
-from saleor.account.backends import BaseBackend
-from saleor.account.models import Address, ServiceAccount, User
+from saleor.account.models import (
+    Address,
+    ServiceAccount,
+    StaffNotificationRecipient,
+    User,
+)
 from saleor.checkout import utils
 from saleor.checkout.models import Checkout
 from saleor.checkout.utils import add_variant_to_checkout
@@ -74,8 +78,9 @@ from saleor.shipping.models import (
 )
 from saleor.site import AuthenticationBackends
 from saleor.site.models import AuthorizationKey, SiteSettings
-from saleor.webhook import WebhookEventType
+from saleor.webhook.event_types import WebhookEventType
 from saleor.webhook.models import Webhook
+from saleor.wishlist.models import Wishlist
 from tests.utils import create_image
 
 
@@ -338,6 +343,7 @@ def customer_user(address):  # pylint: disable=W0613
         last_name="Wade",
     )
     user.addresses.add(default_address)
+    user._password = "password"
     return user
 
 
@@ -379,14 +385,6 @@ def admin_user(db):
 
 
 @pytest.fixture
-def admin_client(admin_user):
-    """Return a Django test client logged in as an admin user."""
-    client = Client()
-    client.login(username=admin_user.email, password="password")
-    return client
-
-
-@pytest.fixture
 def staff_user(db):
     """Return a staff member."""
     return User.objects.create_user(
@@ -395,19 +393,6 @@ def staff_user(db):
         is_staff=True,
         is_active=True,
     )
-
-
-@pytest.fixture
-def staff_client(client, staff_user):
-    """Return a Django test client logged in as an staff member."""
-    client.login(username=staff_user.email, password="password")
-    return client
-
-
-@pytest.fixture
-def authorized_client(client, customer_user):
-    client.login(username=customer_user.email, password="password")
-    return client
 
 
 @pytest.fixture
@@ -627,7 +612,51 @@ def product(product_type, category):
 
 
 @pytest.fixture
-def product_with_two_variants(color_attribute, size_attribute, category):
+def product_with_single_variant(product_type, category):
+    product = Product.objects.create(
+        name="Test product with single variant",
+        price=Money("1.99", "USD"),
+        product_type=product_type,
+        category=category,
+        is_published=True,
+    )
+    variant = ProductVariant.objects.create(
+        product=product,
+        sku="SKU_SINGLE_VARIANT",
+        cost_price=Money("1.00", "USD"),
+        quantity=101,
+        quantity_allocated=1,
+    )
+    return product
+
+
+@pytest.fixture
+def product_with_two_variants(product_type, category):
+    product = Product.objects.create(
+        name="Test product with two variants",
+        price=Money("10.00", "USD"),
+        product_type=product_type,
+        category=category,
+    )
+
+    ProductVariant.objects.bulk_create(
+        [
+            ProductVariant(
+                product=product,
+                sku=f"Product variant #{i}",
+                cost_price=Money("1.00", "USD"),
+                quantity=10,
+                quantity_allocated=1,
+            )
+            for i in (1, 2)
+        ]
+    )
+
+    return product
+
+
+@pytest.fixture
+def product_with_variant_with_two_attributes(color_attribute, size_attribute, category):
     product_type = ProductType.objects.create(
         name="Type with two variants", has_variants=True, is_shipping_required=True
     )
@@ -1204,13 +1233,6 @@ def authorization_key(site_settings, authorization_backend_name):
 
 
 @pytest.fixture
-def base_backend(authorization_backend_name):
-    base_backend = BaseBackend()
-    base_backend.DB_NAME = authorization_backend_name
-    return base_backend
-
-
-@pytest.fixture
 def permission_manage_staff():
     return Permission.objects.get(codename="manage_staff")
 
@@ -1233,11 +1255,6 @@ def permission_manage_users():
 @pytest.fixture
 def permission_manage_settings():
     return Permission.objects.get(codename="manage_settings")
-
-
-@pytest.fixture
-def permission_impersonate_users():
-    return Permission.objects.get(codename="impersonate_users")
 
 
 @pytest.fixture
@@ -1743,3 +1760,34 @@ def mock_get_manager(mocker, fake_payment_interface):
     )
     yield fake_payment_interface
     mgr.assert_called_once()
+
+
+@pytest.fixture
+def staff_notification_recipient(db, staff_user):
+    return StaffNotificationRecipient.objects.create(active=True, user=staff_user)
+
+
+@pytest.fixture
+def customer_wishlist(customer_user):
+    return Wishlist.objects.create(user=customer_user)
+
+
+@pytest.fixture
+def customer_wishlist_item(customer_wishlist, product_with_single_variant):
+    product = product_with_single_variant
+    assert product.variants.count() == 1
+    variant = product.variants.first()
+    item = customer_wishlist.add_variant(variant)
+    return item
+
+
+@pytest.fixture
+def customer_wishlist_item_with_two_variants(
+    customer_wishlist, product_with_two_variants
+):
+    product = product_with_two_variants
+    assert product.variants.count() == 2
+    [variant_1, variant_2] = product.variants.all()
+    item = customer_wishlist.add_variant(variant_1)
+    item.variants.add(variant_2)
+    return item

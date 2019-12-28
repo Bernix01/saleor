@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 
+from ...account.error_codes import AccountErrorCode
 from ...checkout import models
 from ...checkout.error_codes import CheckoutErrorCode
 from ...checkout.utils import (
@@ -28,7 +29,9 @@ from ...checkout.utils import (
 )
 from ...core import analytics
 from ...core.exceptions import InsufficientStock
+from ...core.permissions import OrderPermissions
 from ...core.taxes import TaxError
+from ...core.utils.url import validate_storefront_url
 from ...discount import models as voucher_model
 from ...payment import PaymentError, gateway, models as payment_models
 from ...payment.interface import AddressData
@@ -79,7 +82,7 @@ def clean_shipping_method(
 
 def update_checkout_shipping_method_if_invalid(checkout: models.Checkout, discounts):
     # remove shipping method when empty checkout
-    if checkout.quantity == 0:
+    if checkout.quantity == 0 or not checkout.is_shipping_required():
         checkout.shipping_method = None
         checkout.save(update_fields=["shipping_method"])
 
@@ -221,9 +224,10 @@ class CheckoutCreate(ModelMutation, I18nMixin):
         # Resolve and process the lines, retrieving the variants and quantities
         lines = data.pop("lines", None)
         if lines:
-            cleaned_input["variants"], cleaned_input[
-                "quantities"
-            ] = cls.process_checkout_lines(lines)
+            (
+                cleaned_input["variants"],
+                cleaned_input["quantities"],
+            ) = cls.process_checkout_lines(lines)
 
         cleaned_input["shipping_address"] = cls.retrieve_shipping_address(user, data)
         cleaned_input["billing_address"] = cls.retrieve_billing_address(user, data)
@@ -333,7 +337,6 @@ class CheckoutLinesAdd(BaseMutation):
         quantities = [line.get("quantity") for line in lines]
 
         check_lines_quantity(variants, quantities)
-        update_checkout_shipping_method_if_invalid(checkout, info.context.discounts)
 
         if variants and quantities:
             for variant, quantity in zip(variants, quantities):
@@ -346,6 +349,7 @@ class CheckoutLinesAdd(BaseMutation):
                         f"Insufficient product stock: {exc.item}", code=exc.code
                     )
 
+        update_checkout_shipping_method_if_invalid(checkout, info.context.discounts)
         recalculate_checkout_discount(checkout, info.context.discounts)
 
         return CheckoutLinesAdd(checkout=checkout)
@@ -632,6 +636,13 @@ class CheckoutComplete(BaseMutation):
                 "Determines whether to store the payment source for future usage."
             ),
         )
+        redirect_url = graphene.String(
+            required=False,
+            description=(
+                "URL of a view where users should be redirected to "
+                "see the order details. URL in RFC 1808 format."
+            ),
+        )
 
     class Meta:
         description = (
@@ -643,7 +654,7 @@ class CheckoutComplete(BaseMutation):
         error_type_field = "checkout_errors"
 
     @classmethod
-    def perform_mutation(cls, _root, info, checkout_id, store_source):
+    def perform_mutation(cls, _root, info, checkout_id, store_source, **data):
         checkout = cls.get_node_or_error(
             info,
             checkout_id,
@@ -712,8 +723,22 @@ class CheckoutComplete(BaseMutation):
         if txn.customer_id and user.is_authenticated:
             store_customer_id(user, payment.gateway, txn.customer_id)
 
+        redirect_url = data.get("redirect_url", "")
+        if redirect_url:
+            try:
+                validate_storefront_url(redirect_url)
+            except ValidationError as error:
+                raise ValidationError(
+                    {"redirect_url": error}, code=AccountErrorCode.INVALID
+                )
+
         # create the order into the database
-        order = create_order(checkout=checkout, order_data=order_data, user=user)
+        order = create_order(
+            checkout=checkout,
+            order_data=order_data,
+            user=user,
+            redirect_url=redirect_url,
+        )
 
         # remove checkout after order is successfully paid
         checkout.delete()
@@ -831,7 +856,7 @@ class CheckoutRemovePromoCode(BaseMutation):
 class CheckoutUpdateMeta(UpdateMetaBaseMutation):
     class Meta:
         description = "Updates metadata for checkout."
-        permissions = ("order.manage_orders",)
+        permissions = (OrderPermissions.MANAGE_ORDERS,)
         model = models.Checkout
         public = True
         error_type_class = CheckoutError
@@ -841,7 +866,7 @@ class CheckoutUpdateMeta(UpdateMetaBaseMutation):
 class CheckoutUpdatePrivateMeta(UpdateMetaBaseMutation):
     class Meta:
         description = "Updates private metadata for checkout."
-        permissions = ("order.manage_orders",)
+        permissions = (OrderPermissions.MANAGE_ORDERS,)
         model = models.Checkout
         public = False
         error_type_class = CheckoutError
@@ -851,7 +876,7 @@ class CheckoutUpdatePrivateMeta(UpdateMetaBaseMutation):
 class CheckoutClearMeta(ClearMetaBaseMutation):
     class Meta:
         description = "Clear metadata for checkout."
-        permissions = ("order.manage_orders",)
+        permissions = (OrderPermissions.MANAGE_ORDERS,)
         model = models.Checkout
         public = True
         error_type_class = CheckoutError
@@ -861,7 +886,7 @@ class CheckoutClearMeta(ClearMetaBaseMutation):
 class CheckoutClearPrivateMeta(ClearMetaBaseMutation):
     class Meta:
         description = "Clear private metadata for checkout."
-        permissions = ("order.manage_orders",)
+        permissions = (OrderPermissions.MANAGE_ORDERS,)
         model = models.Checkout
         public = False
         error_type_class = CheckoutError

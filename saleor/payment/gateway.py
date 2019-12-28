@@ -191,13 +191,6 @@ def confirm(payment: Payment) -> Transaction:
     )
 
 
-@require_active_payment
-def create_payment_form(payment: Payment, data) -> forms.Form:
-    plugin_manager = get_extensions_manager()
-    payment_data = create_payment_information(payment)
-    return plugin_manager.create_payment_form(data, payment.gateway, payment_data)
-
-
 def list_payment_sources(gateway: str, customer_id: str) -> List["CustomerSource"]:
     plugin_manager = get_extensions_manager()
     return plugin_manager.list_payment_sources(gateway, customer_id)
@@ -211,10 +204,6 @@ def get_client_token(gateway: str, customer_id: str = None) -> str:
 
 def list_gateways() -> List[dict]:
     return get_extensions_manager().list_payment_gateways()
-
-
-def get_template_path(gateway: str) -> str:
-    return get_extensions_manager().get_payment_template(gateway)
 
 
 def _fetch_gateway_response(fn, *args, **kwargs):

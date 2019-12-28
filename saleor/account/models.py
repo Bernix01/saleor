@@ -19,6 +19,7 @@ from phonenumber_field.modelfields import PhoneNumber, PhoneNumberField
 from versatileimagefield.fields import VersatileImageField
 
 from ..core.models import ModelWithMetadata
+from ..core.permissions import AccountPermissions, BasePermissionEnum
 from ..core.utils.json_serializer import CustomJsonEncoder
 from . import CustomerEvents
 from .validators import validate_possible_number
@@ -158,13 +159,12 @@ class User(PermissionsMixin, ModelWithMetadata, AbstractBaseUser):
     class Meta:
         permissions = (
             (
-                "manage_users",
+                AccountPermissions.MANAGE_USERS.codename,
                 pgettext_lazy("Permission description", "Manage customers."),
             ),
-            ("manage_staff", pgettext_lazy("Permission description", "Manage staff.")),
             (
-                "impersonate_users",
-                pgettext_lazy("Permission description", "Impersonate customers."),
+                AccountPermissions.MANAGE_STAFF.codename,
+                pgettext_lazy("Permission description", "Manage staff."),
             ),
         )
 
@@ -180,6 +180,10 @@ class User(PermissionsMixin, ModelWithMetadata, AbstractBaseUser):
 
     def get_short_name(self):
         return self.email
+
+    def has_perm(self, perm: BasePermissionEnum, obj=None):
+        # This method is overridden to accept perm as BasePermissionEnum
+        return super().has_perm(perm.value, obj)
 
 
 class ServiceAccount(ModelWithMetadata):
@@ -198,7 +202,7 @@ class ServiceAccount(ModelWithMetadata):
     class Meta:
         permissions = (
             (
-                "manage_service_accounts",
+                AccountPermissions.MANAGE_SERVICE_ACCOUNTS.codename,
                 pgettext_lazy("Permission description", "Manage service account"),
             ),
         )
@@ -219,7 +223,7 @@ class ServiceAccount(ModelWithMetadata):
         if not self.is_active:
             return False
 
-        wanted_perms = set(perm_list)
+        wanted_perms = {perm.value for perm in perm_list}
         actual_perms = self._get_permissions()
 
         return (wanted_perms & actual_perms) == wanted_perms
@@ -229,7 +233,7 @@ class ServiceAccount(ModelWithMetadata):
         if not self.is_active:
             return False
 
-        return perm in self._get_permissions()
+        return perm.value in self._get_permissions()
 
 
 class ServiceAccountToken(models.Model):
@@ -276,3 +280,18 @@ class CustomerEvent(models.Model):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(type={self.type!r}, user={self.user!r})"
+
+
+class StaffNotificationRecipient(models.Model):
+    user = models.OneToOneField(
+        User,
+        related_name="staff_notification",
+        on_delete=models.CASCADE,
+        blank=True,
+        null=True,
+    )
+    staff_email = models.EmailField(unique=True, blank=True, null=True)
+    active = models.BooleanField(default=True)
+
+    def get_email(self):
+        return self.user.email if self.user else self.staff_email

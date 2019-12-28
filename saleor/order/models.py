@@ -7,7 +7,6 @@ from django.contrib.postgres.fields import JSONField
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import F, Max, Sum
-from django.urls import reverse
 from django.utils.timezone import now
 from django.utils.translation import pgettext_lazy
 from django_measurement.models import MeasurementField
@@ -17,6 +16,7 @@ from prices import Money
 
 from ..account.models import Address
 from ..core.models import ModelWithMetadata
+from ..core.permissions import OrderPermissions
 from ..core.taxes import zero_money, zero_taxed_money
 from ..core.utils.json_serializer import CustomJsonEncoder
 from ..core.weight import WeightUnits, zero_weight
@@ -174,7 +174,7 @@ class Order(ModelWithMetadata):
         ordering = ("-pk",)
         permissions = (
             (
-                "manage_orders",
+                OrderPermissions.MANAGE_ORDERS.codename,
                 pgettext_lazy("Permission description", "Manage orders."),
             ),
         )
@@ -224,8 +224,10 @@ class Order(ModelWithMetadata):
     def __str__(self):
         return "#%d" % (self.id,)
 
-    def get_absolute_url(self):
-        return reverse("order:details", kwargs={"token": self.token})
+    # Deprecated. To remove in #5022
+    @staticmethod
+    def get_absolute_url():
+        return ""
 
     def get_last_payment(self):
         return max(self.payments.all(), default=None, key=attrgetter("pk"))
