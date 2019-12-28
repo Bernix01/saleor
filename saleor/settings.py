@@ -54,7 +54,7 @@ DATABASES = {
 
 
 TIME_ZONE = "America/Chicago"
-LANGUAGE_CODE = "en"
+LANGUAGE_CODE = "es"
 LANGUAGES = [
     ("ar", _("Arabic")),
     ("az", _("Azerbaijani")),
