@@ -9,10 +9,13 @@ from typing import Type, Union
 from unittest.mock import patch
 
 from django.conf import settings
+from django.contrib.auth.models import Group, Permission
 from django.contrib.sites.models import Site
 from django.core.files import File
 from django.db.models import Q
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.text import slugify
 from faker import Factory
 from faker.providers import BaseProvider
 from measurement.measures import Weight
@@ -21,6 +24,13 @@ from prices import Money, TaxedMoney
 from ...account.models import Address, User
 from ...account.utils import store_user_address
 from ...checkout import AddressType
+from ...core.permissions import (
+    AccountPermissions,
+    CheckoutPermissions,
+    GiftcardPermissions,
+    OrderPermissions,
+)
+from ...core.utils import build_absolute_uri
 from ...core.weight import zero_weight
 from ...discount import DiscountValueType, VoucherType
 from ...discount.models import Sale, Voucher
@@ -56,6 +66,8 @@ from ...product.thumbnails import (
     create_product_thumbnails,
 )
 from ...shipping.models import ShippingMethod, ShippingMethodType, ShippingZone
+from ...warehouse.management import increase_stock
+from ...warehouse.models import Stock, Warehouse
 
 fake = Factory.create()
 PRODUCTS_LIST_DIR = "products-list/"
@@ -209,6 +221,16 @@ def create_products(products_data, placeholder_dir, create_images):
                 create_product_image(product, placeholder_dir, image_name)
 
 
+def create_stocks(variant, warehouse_qs=None, **defaults):
+    if warehouse_qs is None:
+        warehouse_qs = Warehouse.objects.all()
+
+    for warehouse in warehouse_qs:
+        Stock.objects.update_or_create(
+            warehouse=warehouse, product_variant=variant, defaults=defaults
+        )
+
+
 def create_product_variants(variants_data):
     for variant in variants_data:
         pk = variant["pk"]
@@ -221,7 +243,10 @@ def create_product_variants(variants_data):
         defaults["product_id"] = product_id
         set_field_as_money(defaults, "price_override")
         set_field_as_money(defaults, "cost_price")
-        ProductVariant.objects.update_or_create(pk=pk, defaults=defaults)
+        quantity = defaults.pop("quantity")
+        quantity_allocated = defaults.pop("quantity_allocated")
+        variant, _ = ProductVariant.objects.update_or_create(pk=pk, defaults=defaults)
+        create_stocks(variant, quantity=quantity, quantity_allocated=quantity_allocated)
 
 
 def assign_attributes_to_product_types(
@@ -343,7 +368,7 @@ def create_product_image(product, placeholder_dir, image_name):
     return product_image
 
 
-def create_address():
+def create_address(save=True):
     address = Address(
         first_name=fake.first_name(),
         last_name=fake.last_name(),
@@ -359,30 +384,36 @@ def create_address():
     else:
         address.postal_code = fake.postalcode()
 
-    address.save()
+    if save:
+        address.save()
     return address
 
 
-def create_fake_user():
-    address = create_address()
+def create_fake_user(save=True):
+    address = create_address(save=save)
     email = get_email(address.first_name, address.last_name)
 
     # Skip the email if it already exists
-    if User.objects.filter(email=email).exists():
-        return
+    try:
+        return User.objects.get(email=email)
+    except User.DoesNotExist:
+        pass
 
-    user = User.objects.create_user(
+    user = User(
         first_name=address.first_name,
         last_name=address.last_name,
         email=email,
         password="password",
+        default_billing_address=address,
+        default_shipping_address=address,
+        is_active=True,
+        note=fake.paragraph(),
+        date_joined=fake.date_time(tzinfo=timezone.get_current_timezone()),
     )
 
-    user.addresses.add(address)
-    user.default_billing_address = address
-    user.default_shipping_address = address
-    user.is_active = True
-    user.save()
+    if save:
+        user.save()
+        user.addresses.add(address)
     return user
 
 
@@ -398,7 +429,6 @@ def create_fake_payment(mock_email_confirmation, order):
         payment_token=str(uuid.uuid4()),
         total=order.total.gross.amount,
         currency=order.total.gross.currency,
-        billing_address=order.billing_address,
     )
 
     # Create authorization transaction
@@ -426,12 +456,15 @@ def create_order_lines(order, discounts, how_many=10):
     )
     variants_iter = itertools.cycle(variants)
     lines = []
+    stocks = []
+    country = order.shipping_address.country
     for dummy in range(how_many):
         variant = next(variants_iter)
         product = variant.product
         quantity = random.randrange(1, 5)
-        variant.quantity += quantity
-        variant.quantity_allocated += quantity
+        stocks.append(
+            increase_stock(variant, country, quantity, allocate=True, commit=False)
+        )
         unit_price = variant.get_price(discounts)
         unit_price = TaxedMoney(net=unit_price, gross=unit_price)
         lines.append(
@@ -447,7 +480,7 @@ def create_order_lines(order, discounts, how_many=10):
                 tax_rate=0,
             )
         )
-    ProductVariant.objects.bulk_update(variants, ["quantity", "quantity_allocated"])
+    Stock.objects.bulk_update(stocks, ["quantity", "quantity_allocated"])
     lines = OrderLine.objects.bulk_create(lines)
     manager = get_extensions_manager()
     for line in lines:
@@ -474,14 +507,14 @@ def create_fulfillments(order):
 
 
 def create_fake_order(discounts, max_order_lines=5):
-    user = random.choice(
-        [None, User.objects.filter(is_superuser=False).order_by("?").first()]
-    )
-    if user:
-        address = user.default_shipping_address
+    customers = User.objects.filter(is_superuser=False).order_by("?")
+    customer = random.choice([None, customers.first()])
+
+    if customer:
+        address = customer.default_shipping_address
         order_data = {
-            "user": user,
-            "billing_address": user.default_billing_address,
+            "user": customer,
+            "billing_address": customer.default_billing_address,
             "shipping_address": address,
         }
     else:
@@ -530,6 +563,57 @@ def create_users(how_many=10):
     for dummy in range(how_many):
         user = create_fake_user()
         yield "User: %s" % (user.email,)
+
+
+def create_permission_groups():
+    super_users = User.objects.filter(is_superuser=True)
+    if not super_users:
+        super_users = create_staff_users(1, True)
+    group = create_group("Full Access", Permission.objects.all(), super_users)
+    yield f"Group: {group}"
+
+    staff_users = create_staff_users()
+    customer_support_codenames = [
+        perm.codename
+        for enum in [CheckoutPermissions, OrderPermissions, GiftcardPermissions]
+        for perm in enum
+    ]
+    customer_support_codenames.append(AccountPermissions.MANAGE_USERS.codename)
+    customer_support_permissions = Permission.objects.filter(
+        codename__in=customer_support_codenames
+    )
+    group = create_group("Customer Support", customer_support_permissions, staff_users)
+    yield f"Group: {group}"
+
+
+def create_group(name, permissions, users):
+    group, _ = Group.objects.get_or_create(name=name)
+    group.permissions.add(*permissions)
+    group.user_set.add(*users)
+    return group
+
+
+def create_staff_users(how_many=2, superuser=False):
+    users = []
+    for _ in range(how_many):
+        address = create_address()
+        first_name = address.first_name
+        last_name = address.last_name
+        email = get_email(first_name, last_name)
+
+        staff_user = User.objects.create_user(
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            password="password",
+            default_billing_address=address,
+            default_shipping_address=address,
+            is_staff=True,
+            is_active=True,
+            is_superuser=superuser,
+        )
+        users.append(staff_user)
+    return users
 
 
 def create_orders(how_many=10):
@@ -863,6 +947,17 @@ def create_shipping_zones():
     )
 
 
+def create_warehouses():
+    for shipping_zone in ShippingZone.objects.all():
+        shipping_zone_name = shipping_zone.name
+        warehouse, _ = Warehouse.objects.update_or_create(
+            name=shipping_zone_name,
+            slug=slugify(shipping_zone_name),
+            defaults={"company_name": fake.company(), "address": create_address()},
+        )
+        warehouse.shipping_zones.add(shipping_zone)
+
+
 def create_vouchers():
     voucher, created = Voucher.objects.get_or_create(
         code="FREESHIPPING",
@@ -1075,8 +1170,16 @@ def create_menus():
             name=collection.name, collection=collection, parent=item
         )
 
+    item_saleor = bottom_menu.items.get_or_create(name="Saleor", url="/")[0]
+
     page = Page.objects.order_by("?")[0]
-    bottom_menu.items.get_or_create(name=page.title, page=page)
+    item_saleor.children.get_or_create(name=page.title, page=page, menu=bottom_menu)
+
+    api_url = build_absolute_uri(reverse("api"))
+    item_saleor.children.get_or_create(
+        name="GraphQL API", url=api_url, menu=bottom_menu
+    )
+
     yield "Created footer menu"
     update_menu(top_menu)
     update_menu(bottom_menu)

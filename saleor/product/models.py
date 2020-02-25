@@ -1,18 +1,15 @@
-from decimal import Decimal
-from typing import TYPE_CHECKING, Iterable, Union
+from typing import TYPE_CHECKING, Iterable, Optional, Union
 from uuid import uuid4
 
 from django.conf import settings
 from django.contrib.postgres.aggregates import StringAgg
 from django.contrib.postgres.fields import JSONField
-from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Case, Count, F, FilteredRelation, Q, When
 from django.urls import reverse
 from django.utils.encoding import smart_text
 from django.utils.html import strip_tags
 from django.utils.text import slugify
-from django.utils.translation import pgettext_lazy
 from django_measurement.models import MeasurementField
 from django_prices.models import MoneyField
 from draftjs_sanitizer import clean_draft_js
@@ -24,7 +21,6 @@ from text_unidecode import unidecode
 from versatileimagefield.fields import PPOIField, VersatileImageField
 
 from ..core.db.fields import SanitizedJSONField
-from ..core.exceptions import InsufficientStock
 from ..core.models import (
     ModelWithMetadata,
     PublishableModel,
@@ -42,14 +38,16 @@ from ..seo.models import SeoModel, SeoModelTranslation
 from . import AttributeInputType
 
 if TYPE_CHECKING:
+    # flake8: noqa
     from prices import Money
 
     from ..account.models import User
+    from django.db.models import OrderBy
 
 
 class Category(MPTTModel, ModelWithMetadata, SeoModel):
-    name = models.CharField(max_length=128)
-    slug = models.SlugField(max_length=128)
+    name = models.CharField(max_length=250)
+    slug = models.SlugField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     description_json = JSONField(blank=True, default=dict)
     parent = models.ForeignKey(
@@ -99,7 +97,8 @@ class CategoryTranslation(SeoModelTranslation):
 
 
 class ProductType(ModelWithMetadata):
-    name = models.CharField(max_length=128)
+    name = models.CharField(max_length=250)
+    slug = models.SlugField(max_length=255, unique=True)
     has_variants = models.BooleanField(default=True)
     is_shipping_required = models.BooleanField(default=True)
     is_digital = models.BooleanField(default=False)
@@ -214,33 +213,29 @@ class ProductsQueryset(PublishedQuerySet):
                     ordering=(
                         [
                             f"filtered_attribute__values__{field_name}"
-                            for field_name in AttributeValue._meta.ordering
+                            for field_name in AttributeValue._meta.ordering or []
                         ]
                     ),
                 ),
                 output_field=models.CharField(),
             ),
+            concatenated_values_order=Case(
+                # Make the products having no such attribute be last in the sorting
+                When(concatenated_values=None, then=2),
+                # Put the products having an empty attribute value at the bottom of
+                # the other products.
+                When(concatenated_values="", then=1),
+                # Put the products having an attribute value to be always at the top
+                default=0,
+                output_field=models.IntegerField(),
+            ),
         )
 
-        qs = qs.extra(
-            order_by=[
-                Case(
-                    # Make the products having no such attribute be last in the sorting
-                    When(concatenated_values=None, then=2),
-                    # Put the products having an empty attribute value at the bottom of
-                    # the other products.
-                    When(concatenated_values="", then=1),
-                    # Put the products having an attribute value to be always at the top
-                    default=0,
-                    output_field=models.IntegerField(),
-                ),
-                # Sort each group of products (0, 1, 2, ...) per attribute values
-                "concatenated_values",
-                # Sort each group of products by name,
-                # if they have the same values or not values
-                "name",
-            ]
-        )
+        # Sort by concatenated_values_order then
+        # Sort each group of products (0, 1, 2, ...) per attribute values
+        # Sort each group of products by name,
+        # if they have the same values or not values
+        qs = qs.order_by("concatenated_values_order", "concatenated_values", "name")
 
         # Descending sorting
         if not ascending:
@@ -252,7 +247,8 @@ class Product(SeoModel, ModelWithMetadata, PublishableModel):
     product_type = models.ForeignKey(
         ProductType, related_name="products", on_delete=models.CASCADE
     )
-    name = models.CharField(max_length=128)
+    name = models.CharField(max_length=250)
+    slug = models.SlugField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     description_json = SanitizedJSONField(
         blank=True, default=dict, sanitizer=clean_draft_js
@@ -295,10 +291,7 @@ class Product(SeoModel, ModelWithMetadata, PublishableModel):
         app_label = "product"
         ordering = ("name",)
         permissions = (
-            (
-                ProductPermissions.MANAGE_PRODUCTS.codename,
-                pgettext_lazy("Permission description", "Manage products."),
-            ),
+            (ProductPermissions.MANAGE_PRODUCTS.codename, "Manage products."),
         )
 
     def __iter__(self):
@@ -333,20 +326,10 @@ class Product(SeoModel, ModelWithMetadata, PublishableModel):
             return json_content_to_raw_text(self.description_json)
         return strip_tags(self.description)
 
-    @property
-    def is_available(self) -> bool:
-        return self.is_visible and self.is_in_stock()
-
     # Deprecated. To remove in #5022
     @staticmethod
     def get_absolute_url() -> str:
         return ""
-
-    def get_slug(self) -> str:
-        return slugify(smart_text(unidecode(self.name)))
-
-    def is_in_stock(self) -> bool:
-        return any(variant.is_in_stock() for variant in self)
 
     def get_first_image(self):
         images = list(self.images.all())
@@ -444,12 +427,7 @@ class ProductVariant(ModelWithMetadata):
     )
     images = models.ManyToManyField("ProductImage", through="VariantImage")
     track_inventory = models.BooleanField(default=True)
-    quantity = models.IntegerField(
-        validators=[MinValueValidator(0)], default=Decimal(1)
-    )
-    quantity_allocated = models.IntegerField(
-        validators=[MinValueValidator(0)], default=Decimal(0)
-    )
+
     cost_price_amount = models.DecimalField(
         max_digits=settings.DEFAULT_MAX_DIGITS,
         decimal_places=settings.DEFAULT_DECIMAL_PLACES,
@@ -471,24 +449,8 @@ class ProductVariant(ModelWithMetadata):
         return self.name or self.sku
 
     @property
-    def quantity_available(self) -> int:
-        return max(self.quantity - self.quantity_allocated, 0)
-
-    @property
     def is_visible(self) -> bool:
         return self.product.is_visible
-
-    @property
-    def is_available(self) -> bool:
-        return self.is_visible and self.is_in_stock()
-
-    def check_quantity(self, quantity):
-        """Check if there is at least the given quantity in stock.
-
-        If stock handling is disabled, it simply run no check.
-        """
-        if self.track_inventory and quantity > self.quantity_available:
-            raise InsufficientStock(self)
 
     @property
     def base_price(self) -> "Money":
@@ -515,9 +477,6 @@ class ProductVariant(ModelWithMetadata):
     def is_digital(self) -> bool:
         is_digital = self.product.product_type.is_digital
         return not self.is_shipping_required() and is_digital
-
-    def is_in_stock(self) -> bool:
-        return self.quantity_available > 0
 
     def display_product(self, translated: bool = False) -> str:
         if translated:
@@ -563,9 +522,7 @@ class ProductVariantTranslation(models.Model):
 
 class DigitalContent(ModelWithMetadata):
     FILE = "file"
-    TYPE_CHOICES = (
-        (FILE, pgettext_lazy("File as a digital product", "digital_product")),
-    )
+    TYPE_CHOICES = ((FILE, "digital_product"),)
     use_default_settings = models.BooleanField(default=True)
     automatic_fulfillment = models.BooleanField(default=False)
     content_type = models.CharField(max_length=128, default=FILE, choices=TYPE_CHOICES)
@@ -602,7 +559,7 @@ class DigitalContentUrl(models.Model):
             self.token = str(uuid4()).replace("-", "")
         super().save(force_insert, force_update, using, update_fields)
 
-    def get_absolute_url(self) -> str:
+    def get_absolute_url(self) -> Optional[str]:
         url = reverse("digital-product", kwargs={"token": str(self.token)})
         return build_absolute_uri(url)
 
@@ -681,7 +638,7 @@ class AttributeProduct(SortableModel):
         Product,
         blank=True,
         through=AssignedProductAttribute,
-        through_fields=["assignment", "product"],
+        through_fields=("assignment", "product"),
         related_name="attributesrelated",
     )
 
@@ -706,7 +663,7 @@ class AttributeVariant(SortableModel):
         ProductVariant,
         blank=True,
         through=AssignedVariantAttribute,
-        through_fields=["assignment", "variant"],
+        through_fields=("assignment", "variant"),
         related_name="attributesrelated",
     )
 
@@ -741,7 +698,7 @@ class AttributeQuerySet(BaseAttributeQuerySet):
         id_field = F(f"{m2m_field_name}__id")
         if asc:
             sort_method = sort_order_field.asc(nulls_last=True)
-            id_sort = id_field
+            id_sort: Union["OrderBy", "F"] = id_field
         else:
             sort_method = sort_order_field.desc(nulls_first=True)
             id_sort = id_field.desc()
@@ -756,8 +713,8 @@ class AttributeQuerySet(BaseAttributeQuerySet):
 
 
 class Attribute(ModelWithMetadata):
-    slug = models.SlugField(max_length=50, unique=True)
-    name = models.CharField(max_length=50)
+    slug = models.SlugField(max_length=250, unique=True)
+    name = models.CharField(max_length=255)
 
     input_type = models.CharField(
         max_length=50,
@@ -770,14 +727,14 @@ class Attribute(ModelWithMetadata):
         blank=True,
         related_name="product_attributes",
         through=AttributeProduct,
-        through_fields=["attribute", "product_type"],
+        through_fields=("attribute", "product_type"),
     )
     product_variant_types = models.ManyToManyField(
         ProductType,
         blank=True,
         related_name="variant_attributes",
         through=AttributeVariant,
-        through_fields=["attribute", "product_type"],
+        through_fields=("attribute", "product_type"),
     )
 
     value_required = models.BooleanField(default=False, blank=True)
@@ -798,9 +755,6 @@ class Attribute(ModelWithMetadata):
 
     def __str__(self) -> str:
         return self.name
-
-    def get_formfield_name(self) -> str:
-        return slugify("attribute-%s-%s" % (self.slug, self.pk), allow_unicode=True)
 
     def has_values(self) -> bool:
         return self.values.exists()
@@ -830,9 +784,9 @@ class AttributeTranslation(models.Model):
 
 
 class AttributeValue(SortableModel):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=250)
     value = models.CharField(max_length=100, blank=True, default="")
-    slug = models.SlugField(max_length=100)
+    slug = models.SlugField(max_length=255)
     attribute = models.ForeignKey(
         Attribute, related_name="values", on_delete=models.CASCADE
     )
@@ -852,11 +806,6 @@ class AttributeValue(SortableModel):
 
     def get_ordering_queryset(self):
         return self.attribute.values.all()
-
-    def save(self, *args, **kwargs):
-        if not self.slug and self.name:
-            self.slug = slugify(self.name)
-        return super().save(*args, **kwargs)
 
 
 class AttributeValueTranslation(models.Model):
@@ -923,14 +872,14 @@ class CollectionProduct(SortableModel):
 
 
 class Collection(SeoModel, ModelWithMetadata, PublishableModel):
-    name = models.CharField(max_length=128, unique=True)
-    slug = models.SlugField(max_length=128)
+    name = models.CharField(max_length=250, unique=True)
+    slug = models.SlugField(max_length=255, unique=True)
     products = models.ManyToManyField(
         Product,
         blank=True,
         related_name="collections",
         through=CollectionProduct,
-        through_fields=["collection", "product"],
+        through_fields=("collection", "product"),
     )
     background_image = VersatileImageField(
         upload_to="collection-backgrounds", blank=True, null=True

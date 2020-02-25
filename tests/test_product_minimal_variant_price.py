@@ -93,6 +93,7 @@ def test_product_objects_create_sets_default_minimal_variant_price(
 ):
     product1 = Product.objects.create(
         name="Test product 1",
+        slug="test-product-1",
         price=Money("10.00", "USD"),
         category=category,
         product_type=product_type,
@@ -103,6 +104,7 @@ def test_product_objects_create_sets_default_minimal_variant_price(
 
     product2 = Product.objects.create(
         name="Test product 2",
+        slug="test-product-2",
         price=Money("10.00", "USD"),
         minimal_variant_price=Money("20.00", "USD"),
         category=category,
@@ -121,6 +123,7 @@ def test_product_objects_bulk_create_sets_default_minimal_variant_price(
         [
             Product(
                 name="Test product 1",
+                slug="test-product-1",
                 price=Money("10.00", "USD"),
                 category=category,
                 product_type=product_type,
@@ -128,6 +131,7 @@ def test_product_objects_bulk_create_sets_default_minimal_variant_price(
             ),
             Product(
                 name="Test product 2",
+                slug="test-product-2",
                 price=Money("10.00", "USD"),
                 minimal_variant_price=Money("20.00", "USD"),
                 category=category,
@@ -148,7 +152,7 @@ def test_product_objects_bulk_create_sets_default_minimal_variant_price(
 def test_product_variant_objects_create_updates_minimal_variant_price(product):
     assert product.minimal_variant_price == Money("10.00", "USD")
     ProductVariant.objects.create(
-        product=product, sku="1", price_override=Money("1.00", "USD"), quantity=1
+        product=product, sku="1", price_override=Money("1.00", "USD")
     )
     product.refresh_from_db()
     assert product.minimal_variant_price == Money("1.00", "USD")
@@ -159,16 +163,10 @@ def test_product_variant_objects_bulk_create_updates_minimal_variant_price(produ
     ProductVariant.objects.bulk_create(
         [
             ProductVariant(
-                product=product,
-                sku="1",
-                price_override=Money("1.00", "USD"),
-                quantity=1,
+                product=product, sku="1", price_override=Money("1.00", "USD")
             ),
             ProductVariant(
-                product=product,
-                sku="2",
-                price_override=Money("5.00", "USD"),
-                quantity=1,
+                product=product, sku="2", price_override=Money("5.00", "USD")
             ),
         ]
     )

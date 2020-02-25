@@ -34,6 +34,19 @@ def test_valid_voucher_min_spent_amount(min_spent_amount, value):
     voucher.validate_min_spent(value)
 
 
+def test_valid_voucher_min_checkout_items_quantity(voucher):
+    voucher.min_checkout_items_quantity = 3
+    voucher.save()
+
+    with pytest.raises(NotApplicable) as e:
+        voucher.validate_min_checkout_items_quantity(2)
+
+    assert (
+        str(e.value)
+        == "This offer is only valid for orders with a minimum of 3 quantity."
+    )
+
+
 @pytest.mark.integration
 @pytest.mark.django_db(transaction=True)
 def test_variant_discounts(product):
@@ -123,6 +136,7 @@ def test_specific_products_voucher_checkout_discount(
 def test_sale_applies_to_correct_products(product_type, category):
     product = Product.objects.create(
         name="Test Product",
+        slug="test-product",
         price=Money(10, "USD"),
         description="",
         pk=111,
@@ -132,6 +146,7 @@ def test_sale_applies_to_correct_products(product_type, category):
     variant = ProductVariant.objects.create(product=product, sku="firstvar")
     product2 = Product.objects.create(
         name="Second product",
+        slug="second-product",
         price=Money(15, "USD"),
         description="",
         product_type=product_type,

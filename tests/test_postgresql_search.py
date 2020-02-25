@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import pytest
+from django.utils.text import slugify
 from prices import Money
 
 from saleor.account.models import Address
@@ -19,6 +20,7 @@ def named_products(category, product_type):
     def gen_product(name, description):
         product = Product.objects.create(
             name=name,
+            slug=slugify(name),
             description=description,
             price=Money(Decimal(6.6), "USD"),
             product_type=product_type,
@@ -59,13 +61,6 @@ def unpublish_product(product):
     prod_to_unpublish = product
     prod_to_unpublish.is_published = False
     prod_to_unpublish.save()
-
-
-@pytest.mark.integration
-@pytest.mark.django_db
-def test_storefront_filter_published_products(named_products):
-    unpublish_product(named_products[0])
-    assert not execute_search("Coffee")
 
 
 USERS = [

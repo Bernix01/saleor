@@ -1,6 +1,6 @@
 import graphene
 from django.core.exceptions import ValidationError
-from django.utils.translation import npgettext_lazy, pgettext_lazy
+from django.template.defaultfilters import pluralize
 
 from ....core.permissions import OrderPermissions
 from ....order import models
@@ -10,13 +10,11 @@ from ....order.actions import (
     fulfillment_tracking_updated,
     order_fulfilled,
 )
+from ....order.emails import send_fulfillment_update
 from ....order.error_codes import OrderErrorCode
-from ...core.mutations import (
-    BaseMutation,
-    ClearMetaBaseMutation,
-    UpdateMetaBaseMutation,
-)
+from ...core.mutations import BaseMutation
 from ...core.types.common import OrderError
+from ...meta.deprecated.mutations import ClearMetaBaseMutation, UpdateMetaBaseMutation
 from ...order.types import Fulfillment, Order
 from ..types import OrderLine
 
@@ -41,7 +39,8 @@ class FulfillmentCreateInput(graphene.InputObjectType):
 class FulfillmentUpdateTrackingInput(graphene.InputObjectType):
     tracking_number = graphene.String(description="Fulfillment tracking number.")
     notify_customer = graphene.Boolean(
-        description="If true, send an email notification to the customer."
+        default_value=False,
+        description="If true, send an email notification to the customer.",
     )
 
 
@@ -102,14 +101,14 @@ class FulfillmentCreate(BaseMutation):
     @classmethod
     def clean_lines(cls, order_lines, quantities):
         for order_line, quantity in zip(order_lines, quantities):
-            if quantity > order_line.quantity_unfulfilled:
-                msg = npgettext_lazy(
-                    "Fulfill order line mutation error",
-                    "Only %(quantity)d item remaining to fulfill: %(order_line)s.",
-                    "Only %(quantity)d items remaining to fulfill: %(order_line)s.",
-                    number="quantity",
+            line_quantity_unfulfilled = order_line.quantity_unfulfilled
+            if quantity > line_quantity_unfulfilled:
+                msg = (
+                    "Only %(quantity)d item%(item_pluralize)s remaining "
+                    "to fulfill: %(order_line)s."
                 ) % {
-                    "quantity": order_line.quantity_unfulfilled,
+                    "quantity": line_quantity_unfulfilled,
+                    "item_pluralize": pluralize(line_quantity_unfulfilled),
                     "order_line": order_line,
                 }
                 raise ValidationError(
@@ -210,6 +209,10 @@ class FulfillmentUpdateTracking(BaseMutation):
         fulfillment.save()
         order = fulfillment.order
         fulfillment_tracking_updated(fulfillment, info.context.user, tracking_number)
+        input_data = data.get("input", {})
+        notify_customer = input_data.get("notify_customer")
+        if notify_customer:
+            send_fulfillment_update.delay(order.pk, fulfillment.pk)
         return FulfillmentUpdateTracking(fulfillment=fulfillment, order=order)
 
 
@@ -235,10 +238,7 @@ class FulfillmentCancel(BaseMutation):
         fulfillment = cls.get_node_or_error(info, data.get("id"), only_type=Fulfillment)
 
         if not fulfillment.can_edit():
-            err_msg = pgettext_lazy(
-                "Cancel fulfillment mutation error",
-                "This fulfillment can't be canceled",
-            )
+            err_msg = "This fulfillment can't be canceled"
             raise ValidationError(
                 {
                     "fulfillment": ValidationError(

@@ -33,7 +33,7 @@ class Menu(CountableDjangoObjectType):
     @staticmethod
     def resolve_items(root: models.Menu, _info, **_kwargs):
         if hasattr(root, "prefetched_items"):
-            return root.prefetched_items
+            return root.prefetched_items  # type: ignore
         return root.items.filter(level=0)
 
 
@@ -43,15 +43,6 @@ class MenuItem(CountableDjangoObjectType):
     )
     url = graphene.String(description="URL to the menu item.")
     translation = TranslationField(MenuItemTranslation, type_name="menu item")
-
-    sort_order = graphene.Field(
-        graphene.Int,
-        deprecation_reason=(
-            "Will be dropped in 2.10 and is deprecated since 2.9: "
-            "use the position in list instead and relative "
-            "calculus to determine shift position."
-        ),
-    )
 
     class Meta:
         description = (
@@ -68,7 +59,6 @@ class MenuItem(CountableDjangoObjectType):
             "name",
             "page",
             "parent",
-            "sort_order",
         ]
         model = models.MenuItem
 

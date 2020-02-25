@@ -6,11 +6,10 @@ from graphene import relay
 
 from ....core.permissions import ProductPermissions
 from ....product import models
-from ....product.utils.attributes import AttributeAssignmentType
 from ...core.connection import CountableDjangoObjectType
-from ...core.resolvers import resolve_meta, resolve_private_meta
-from ...core.types import MetadataObjectType
 from ...decorators import permission_required
+from ...meta.deprecated.resolvers import resolve_meta, resolve_private_meta
+from ...meta.types import ObjectWithMetadata
 from ...translations.fields import TranslationField
 from ...translations.types import AttributeTranslation, AttributeValueTranslation
 from ..descriptions import AttributeDescriptions, AttributeValueDescriptions
@@ -59,7 +58,7 @@ class AttributeValue(CountableDjangoObjectType):
         return root.input_type
 
 
-class Attribute(CountableDjangoObjectType, MetadataObjectType):
+class Attribute(CountableDjangoObjectType):
     input_type = AttributeInputTypeEnum(description=AttributeDescriptions.INPUT_TYPE)
 
     name = graphene.String(description=AttributeDescriptions.NAME)
@@ -98,7 +97,7 @@ class Attribute(CountableDjangoObjectType, MetadataObjectType):
             "variants at the product type level."
         )
         only_fields = ["id", "product_types", "product_variant_types"]
-        interfaces = [relay.Node]
+        interfaces = [relay.Node, ObjectWithMetadata]
         model = models.Attribute
 
     @staticmethod
@@ -107,11 +106,11 @@ class Attribute(CountableDjangoObjectType, MetadataObjectType):
 
     @staticmethod
     @permission_required(ProductPermissions.MANAGE_PRODUCTS)
-    def resolve_private_meta(root, _info):
+    def resolve_private_meta(root: models.Attribute, _info):
         return resolve_private_meta(root, _info)
 
     @staticmethod
-    def resolve_meta(root, _info):
+    def resolve_meta(root: models.Attribute, _info):
         return resolve_meta(root, _info)
 
     @staticmethod
@@ -152,14 +151,6 @@ class SelectedAttribute(graphene.ObjectType):
         description=AttributeDescriptions.NAME,
         required=True,
     )
-    value = graphene.Field(
-        AttributeValue,
-        default_value=None,
-        description="The value or the first value of an attribute.",
-        deprecation_reason=(
-            "DEPRECATED: Will be removed in Saleor 2.10, use values instead."
-        ),
-    )
     values = graphene.List(
         AttributeValue, description="Values of an attribute.", required=True
     )
@@ -167,11 +158,16 @@ class SelectedAttribute(graphene.ObjectType):
     class Meta:
         description = "Represents a custom attribute."
 
-    @staticmethod
-    def resolve_value(root: AttributeAssignmentType, _info):
-        return root.values.first()
-
 
 class AttributeInput(graphene.InputObjectType):
     slug = graphene.String(required=True, description=AttributeDescriptions.SLUG)
-    value = graphene.String(required=True, description=AttributeValueDescriptions.SLUG)
+    value = graphene.String(
+        required=False,
+        description=(
+            "Internal representation of a value (unique per attribute). "
+            "DEPRECATED: Will be removed in Saleor 2.11"
+        ),
+    )  # deprecated
+    values = graphene.List(
+        graphene.String, required=False, description=AttributeValueDescriptions.SLUG
+    )

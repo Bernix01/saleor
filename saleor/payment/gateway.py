@@ -2,8 +2,6 @@ import logging
 from decimal import Decimal
 from typing import TYPE_CHECKING, Callable, List
 
-from django import forms
-
 from ..extensions.manager import get_extensions_manager
 from ..payment.interface import TokenConfig
 from . import GatewayError, PaymentError, TransactionKind
@@ -69,9 +67,11 @@ def process_payment(
     response, error = _fetch_gateway_response(
         plugin_manager.process_payment, payment.gateway, payment_data
     )
+    action_required = response is not None and response.action_required
     return create_transaction(
         payment=payment,
         kind=TransactionKind.CAPTURE,
+        action_required=action_required,
         payment_information=payment_data,
         error_msg=error,
         gateway_response=response,
@@ -177,7 +177,7 @@ def void(payment: Payment) -> Transaction:
 @require_active_payment
 def confirm(payment: Payment) -> Transaction:
     plugin_manager = get_extensions_manager()
-    token = _get_past_transaction_token(payment, TransactionKind.AUTH)
+    token = _get_past_transaction_token(payment, TransactionKind.CAPTURE)
     payment_data = create_payment_information(payment=payment, payment_token=token)
     response, error = _fetch_gateway_response(
         plugin_manager.confirm_payment, payment.gateway, payment_data
@@ -222,7 +222,9 @@ def _fetch_gateway_response(fn, *args, **kwargs):
     return response, error
 
 
-def _get_past_transaction_token(payment: Payment, kind: TransactionKind):
+def _get_past_transaction_token(
+    payment: Payment, kind: str  # for kind use "TransactionKind"
+):
     txn = payment.transactions.filter(kind=kind, is_success=True).first()
     if txn is None:
         raise PaymentError(f"Cannot find successful {kind} transaction")

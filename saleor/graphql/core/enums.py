@@ -2,7 +2,7 @@ import graphene
 
 from ...account import error_codes as account_error_codes
 from ...checkout import error_codes as checkout_error_codes
-from ...core import error_codes as shop_error_codes
+from ...core import error_codes as core_error_codes
 from ...core.permissions import get_permissions_enum_list
 from ...core.weight import WeightUnits
 from ...extensions import error_codes as extensions_error_codes
@@ -10,9 +10,11 @@ from ...extensions.plugins.vatlayer import TaxRateType as CoreTaxRateType
 from ...giftcard import error_codes as giftcard_error_codes
 from ...menu import error_codes as menu_error_codes
 from ...order import error_codes as order_error_codes
+from ...page import error_codes as page_error_codes
 from ...payment import error_codes as payment_error_codes
 from ...product import error_codes as product_error_codes
 from ...shipping import error_codes as shipping_error_codes
+from ...warehouse import error_codes as warehouse_error_codes
 from ...webhook import error_codes as webhook_error_codes
 from ...wishlist import error_codes as wishlist_error_codes
 from .utils import str_to_enum
@@ -88,10 +90,14 @@ ExtensionsErrorCode = graphene.Enum.from_enum(
 )
 GiftCardErrorCode = graphene.Enum.from_enum(giftcard_error_codes.GiftCardErrorCode)
 MenuErrorCode = graphene.Enum.from_enum(menu_error_codes.MenuErrorCode)
+MetadataErrorCode = graphene.Enum.from_enum(core_error_codes.MetadataErrorCode)
 OrderErrorCode = graphene.Enum.from_enum(order_error_codes.OrderErrorCode)
+PageErrorCode = graphene.Enum.from_enum(page_error_codes.PageErrorCode)
 PaymentErrorCode = graphene.Enum.from_enum(payment_error_codes.PaymentErrorCode)
 ProductErrorCode = graphene.Enum.from_enum(product_error_codes.ProductErrorCode)
-ShopErrorCode = graphene.Enum.from_enum(shop_error_codes.ShopErrorCode)
+ShopErrorCode = graphene.Enum.from_enum(core_error_codes.ShopErrorCode)
 ShippingErrorCode = graphene.Enum.from_enum(shipping_error_codes.ShippingErrorCode)
+StockErrorCode = graphene.Enum.from_enum(warehouse_error_codes.StockErorrCode)
+WarehouseErrorCode = graphene.Enum.from_enum(warehouse_error_codes.WarehouseErrorCode)
 WebhookErrorCode = graphene.Enum.from_enum(webhook_error_codes.WebhookErrorCode)
 WishlistErrorCode = graphene.Enum.from_enum(wishlist_error_codes.WishlistErrorCode)

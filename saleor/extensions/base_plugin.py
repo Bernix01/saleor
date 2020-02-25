@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from ..discount import DiscountInfo
     from ..product.models import Product, ProductType
     from ..account.models import Address, User
-    from ..order.models import OrderLine, Order
+    from ..order.models import Fulfillment, OrderLine, Order
     from ..payment.interface import GatewayResponse, PaymentData, CustomerSource
 
 
@@ -269,6 +269,16 @@ class BasePlugin:
         """
         return NotImplemented
 
+    def fulfillment_created(
+        self, fulfillment: "Fulfillment", previous_value: Any
+    ) -> Any:
+        """Trigger when fulfillemnt is created.
+
+        Overwrite this method if you need to trigger specific logic when a fulfillment is
+         created.
+        """
+        return NotImplemented
+
     def authorize_payment(
         self, payment_information: "PaymentData", previous_value
     ) -> "GatewayResponse":
@@ -309,7 +319,7 @@ class BasePlugin:
     def _update_config_items(
         cls, configuration_to_update: List[dict], current_config: List[dict]
     ):
-        config_structure = (
+        config_structure: dict = (
             cls.CONFIG_STRUCTURE if cls.CONFIG_STRUCTURE is not None else {}
         )
         for config_item in current_config:
@@ -318,8 +328,10 @@ class BasePlugin:
                 if config_item["name"] == config_item_name:
                     new_value = config_item_to_update.get("value")
                     item_type = config_structure.get(config_item_name, {}).get("type")
-                    if item_type == ConfigurationTypeField.BOOLEAN and not isinstance(
-                        new_value, bool
+                    if (
+                        item_type == ConfigurationTypeField.BOOLEAN
+                        and new_value
+                        and not isinstance(new_value, bool)
                     ):
                         new_value = new_value.lower() == "true"
                     config_item.update([("value", new_value)])

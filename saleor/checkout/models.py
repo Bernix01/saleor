@@ -8,11 +8,13 @@ from django.contrib.postgres.fields import JSONField
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils.encoding import smart_str
+from django_countries.fields import Country, CountryField
 from django_prices.models import MoneyField
 from prices import Money
 
 from ..account.models import Address
 from ..core.models import ModelWithMetadata
+from ..core.permissions import CheckoutPermissions
 from ..core.taxes import zero_money
 from ..core.weight import zero_weight
 from ..giftcard.models import GiftCard
@@ -42,11 +44,15 @@ class CheckoutQueryset(models.QuerySet):
         )  # noqa
 
 
+def get_default_country():
+    return settings.DEFAULT_COUNTRY
+
+
 class Checkout(ModelWithMetadata):
     """A shopping checkout."""
 
     created = models.DateTimeField(auto_now_add=True)
-    last_change = models.DateTimeField(auto_now_add=True)
+    last_change = models.DateTimeField(auto_now=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         blank=True,
@@ -76,6 +82,7 @@ class Checkout(ModelWithMetadata):
         max_length=settings.DEFAULT_CURRENCY_CODE_LENGTH,
         default=settings.DEFAULT_CURRENCY,
     )
+    country = CountryField(default=get_default_country)
 
     discount_amount = models.DecimalField(
         max_digits=settings.DEFAULT_MAX_DIGITS,
@@ -93,15 +100,15 @@ class Checkout(ModelWithMetadata):
 
     class Meta:
         ordering = ("-last_change",)
+        permissions = (
+            (CheckoutPermissions.MANAGE_CHECKOUTS.codename, "Manage checkouts"),
+        )
 
     def __repr__(self):
         return "Checkout(quantity=%s)" % (self.quantity,)
 
     def __iter__(self):
         return iter(self.lines.all())
-
-    def __len__(self):
-        return self.lines.count()
 
     def get_customer_email(self) -> str:
         return self.user.email if self.user else self.email
@@ -134,6 +141,27 @@ class Checkout(ModelWithMetadata):
     def get_last_active_payment(self) -> Optional["Payment"]:
         payments = [payment for payment in self.payments.all() if payment.is_active]
         return max(payments, default=None, key=attrgetter("pk"))
+
+    def set_country(
+        self, country_code: str, commit: bool = False, replace: bool = True
+    ):
+        """Set country for checkout."""
+        if not replace and self.country is not None:
+            return
+        self.country = Country(country_code)
+        if commit:
+            self.save(update_fields=["country"])
+
+    def get_country(self):
+        address = self.shipping_address or self.billing_address
+        saved_country = self.country
+        if address is None or not address.country:
+            return saved_country.code
+
+        country_code = address.country.code
+        if not country_code == saved_country.code:
+            self.set_country(country_code, commit=True)
+        return country_code
 
 
 class CheckoutLine(models.Model):

@@ -1,12 +1,16 @@
 from typing import Optional
 
+import opentracing as ot
+import opentracing.tags as ot_tags
 from django.conf import settings
 from django.contrib.auth.models import AnonymousUser
 from django.utils.functional import SimpleLazyObject
 from graphene_django.settings import graphene_settings
+from graphql import ResolveInfo
 from graphql_jwt.middleware import JSONWebTokenMiddleware
 
 from ..account.models import ServiceAccount
+from ..core.tracing import should_trace
 from .views import API_PATH, GraphQLView
 
 
@@ -33,6 +37,20 @@ def jwt_middleware(get_response):
         return get_response(request)
 
     return _jwt_middleware
+
+
+class OpentracingGrapheneMiddleware:
+    @staticmethod
+    def resolve(next_, root, info: ResolveInfo, **kwargs):
+        if not should_trace(info):
+            return next_(root, info, **kwargs)
+        operation = f"{info.parent_type.name}.{info.field_name}"
+        with ot.global_tracer().start_active_span(operation_name=operation) as scope:
+            span = scope.span
+            span.set_tag(ot_tags.COMPONENT, "graphql")
+            span.set_tag("graphql.parent_type", info.parent_type.name)
+            span.set_tag("graphql.field_name", info.field_name)
+            return next_(root, info, **kwargs)
 
 
 def get_service_account(auth_token) -> Optional[ServiceAccount]:

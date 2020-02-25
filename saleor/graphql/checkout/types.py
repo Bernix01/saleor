@@ -1,17 +1,18 @@
 import graphene
 import graphene_django_optimizer as gql_optimizer
+from graphql_jwt.exceptions import PermissionDenied
 
 from ...checkout import calculations, models
 from ...checkout.utils import get_valid_shipping_methods_for_checkout
-from ...core.permissions import OrderPermissions
+from ...core.permissions import AccountPermissions, CheckoutPermissions
 from ...core.taxes import display_gross_prices, zero_taxed_money
 from ...extensions.manager import get_extensions_manager
 from ..core.connection import CountableDjangoObjectType
-from ..core.resolvers import resolve_meta, resolve_private_meta
-from ..core.types.meta import MetadataObjectType
-from ..core.types.money import Money, TaxedMoney
+from ..core.types.money import TaxedMoney
 from ..decorators import permission_required
 from ..giftcard.types import GiftCard
+from ..meta.deprecated.resolvers import resolve_meta, resolve_private_meta
+from ..meta.types import ObjectWithMetadata
 from ..shipping.types import ShippingMethod
 
 
@@ -65,7 +66,7 @@ class CheckoutLine(CountableDjangoObjectType):
         return root.is_shipping_required()
 
 
-class Checkout(MetadataObjectType, CountableDjangoObjectType):
+class Checkout(CountableDjangoObjectType):
     available_shipping_methods = graphene.List(
         ShippingMethod,
         required=True,
@@ -109,18 +110,11 @@ class Checkout(MetadataObjectType, CountableDjangoObjectType):
             "shipping costs, and discounts included."
         ),
     )
-    discount_amount = graphene.Field(
-        Money,
-        deprecation_reason=(
-            "DEPRECATED: Will be removed in Saleor 2.10, use discount instead."
-        ),
-    )
 
     class Meta:
         only_fields = [
             "billing_address",
             "created",
-            "discount_amount",
             "discount_name",
             "gift_cards",
             "is_shipping_required",
@@ -137,8 +131,15 @@ class Checkout(MetadataObjectType, CountableDjangoObjectType):
         ]
         description = "Checkout object."
         model = models.Checkout
-        interfaces = [graphene.relay.Node]
+        interfaces = [graphene.relay.Node, ObjectWithMetadata]
         filter_fields = ["token"]
+
+    @staticmethod
+    def resolve_user(root: models.Checkout, info):
+        user = info.context.user
+        if user == root.user or user.has_perm(AccountPermissions.MANAGE_USERS):
+            return root.user
+        raise PermissionDenied()
 
     @staticmethod
     def resolve_email(root: models.Checkout, info):
@@ -179,8 +180,10 @@ class Checkout(MetadataObjectType, CountableDjangoObjectType):
         manager = get_extensions_manager()
         display_gross = display_gross_prices()
         for shipping_method in available:
+            # ignore mypy checking because it is checked in
+            # get_valid_shipping_methods_for_checkout
             taxed_price = manager.apply_taxes_to_shipping(
-                shipping_method.price, root.shipping_address
+                shipping_method.price, root.shipping_address  # type: ignore
             )
             if display_gross:
                 shipping_method.price = taxed_price.gross
@@ -201,14 +204,10 @@ class Checkout(MetadataObjectType, CountableDjangoObjectType):
         return root.is_shipping_required()
 
     @staticmethod
-    @permission_required(OrderPermissions.MANAGE_ORDERS)
+    @permission_required(CheckoutPermissions.MANAGE_CHECKOUTS)
     def resolve_private_meta(root: models.Checkout, _info):
         return resolve_private_meta(root, _info)
 
     @staticmethod
     def resolve_meta(root: models.Checkout, _info):
         return resolve_meta(root, _info)
-
-    @staticmethod
-    def resolve_discount_amount(root: models.Checkout, _info):
-        return root.discount
